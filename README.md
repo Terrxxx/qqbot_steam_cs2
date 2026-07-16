@@ -1,6 +1,17 @@
-# QQ Bot — Steam & Counter-Strike 2 机器人
+# QQ Bot — Steam 视奸 & Counter-Strike 2 机器人
 
 基于 [QQ 开放平台](https://q.qq.com) 官方 Python SDK (`botpy`) 构建的 QQ 机器人
+
+## Steam 视奸效果展示
+<img src="static/a77b7b6a32d1c6d10af65e0d4ef5893f.jpg" width="350">
+<img src="static/3554898fa639480a41ea1996c47069a9.jpg" width="350">
+<img src="static/233e9794e8901116e8d8daab7605e285.jpg" width="350">
+<img src="static/f595d2c31dc280d38c7861cd42b8907e.jpg" width="350">
+
+---
+
+<img src="static/i1.jpg" width="450">
+<img src="static/i2.jpg" width="450">
 
 ## 🚀 快速开始
 
@@ -15,7 +26,7 @@
 
 ```bash
 # 克隆项目（或直接进入项目目录）
-cd qqbot
+cd qqbot_steam_cs2
 
 # 安装依赖
 pip install -r requirements.txt
@@ -51,6 +62,10 @@ python main.py
 | `/steam` | Steam 视奸 |
 | `/oc` | 模拟开箱 |
 
+## Steam 视奸
+自动爬取指定Steam账户状态并在指定群播报状态  
+<img src="static/i1.jpg" width="450">
+
 ## 📁 项目结构
 
 ```
@@ -73,7 +88,6 @@ qqbot/
 ├── allSkin.json              # CS2箱子数据
 └── README.md
 ```
-
 
 ## AI 大模型配置示例
 

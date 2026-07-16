@@ -1,0 +1,17 @@
+# 配置文件
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# 其他
+output/
+.vscode/
+
+# 日志
+logs/
+botpy.log
+
+# 数据库
+data/

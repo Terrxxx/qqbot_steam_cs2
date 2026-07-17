@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import time
 import json
+import httpx
 from pathlib import Path
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -166,12 +167,9 @@ def cmd_clear(_: str) -> str:
 
 # ==================== 每日随机 ====================
 
-from services.database import Database as _DB
-
 async def _daily_random(cache_type: str, api_url: str, uid: str) -> str:
-    import httpx
     today = time.strftime("%Y-%m-%d")
-    db = _DB()
+    db = Database()
     cached = db.get_daily_cache(uid, today, cache_type)
     if cached:
         logger.info(f"命中缓存: {cache_type} user={uid}")
@@ -197,7 +195,7 @@ async def cmd_daily_pro(_: str) -> str:
         return Reply(text="你的老婆被Niko抓走了!")
     return Reply(text=(
         f"你的老婆是**{data['player']['team']}**战队的「**{data['player']['name']}**」\n"
-        f"[点击查看老婆图片]({data['avatar']})"  # hltv 有防盗链 暂时先不直接显示
+        f"[点击查看老婆照片]({data['avatar']})"  # hltv 有防盗链 暂时先不直接显示
     ))
 
 @CommandRegistry.register(name="/今日饰品", help_text="今日饰品", usage="/今日饰品")

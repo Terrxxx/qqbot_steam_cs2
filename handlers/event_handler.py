@@ -83,14 +83,14 @@ class QQBotClient(botpy.Client):
         content = self._clean_at(message.content)
         group_id = getattr(message, "group_openid", "")
         logger.info(f"[群聊@] 群={group_id} 用户={message.author.member_openid} 内容={content[:80]}")
-        reply = await CommandRegistry.handle(content, group_openid=group_id)
+        reply = await CommandRegistry.handle(content, group_openid=group_id, user_id=message.author.member_openid)
         await self._do_reply(message, reply)
 
     async def on_c2c_message_create(self, message: C2CMessage) -> None:
         """私聊消息"""
         content = message.content.strip()
         logger.info(f"[私聊] 用户={message.author.user_openid} 内容={content[:80]}")
-        reply = await CommandRegistry.handle(content)
+        reply = await CommandRegistry.handle(content, user_id=message.author.user_openid)
         await self._do_reply(message, reply)
 
     # ==================== 按钮回调 ====================

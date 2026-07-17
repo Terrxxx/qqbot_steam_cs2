@@ -441,11 +441,13 @@ class SteamMonitor:
                 )
                 return
             
-            played_minutes_text = ""
+            extra_text = ""
+            if extra.get("status_text", ""):
+                extra_text += f'- **{extra.get("personaname", "")}** {extra.get("status_text", "")}\n'
             if extra.get("prev_game", ""):
-                played_minutes_text = f'- **{extra.get("prev_game", "")}**共玩了**{extra.get("played_minutes", "")}**分钟'
+                extra_text += f'- 玩完了**{extra.get("prev_game", "")}**, 共玩了**{extra.get("played_minutes", "")}**分钟\n'
 
-            md_text = build_markdown(text=f"## Steam 视奸\n{played_minutes_text}\n![steam #246px #157px]({url})")
+            md_text = build_markdown(text=f"### Steam 视奸\n{extra_text}\n![steam #246px #157px]({url})")
             await self._api.post_group_message(
                 group_openid=group_openid, msg_type=2,
                 markdown={"content": md_text}, content="",

@@ -61,6 +61,7 @@ class CommandRegistry:
     _commands: dict[str, Command] = {}
     _ai_service: Optional[AIService] = None
     _ctx_group: str = ""
+    _ctx_user: str = ""
 
     @classmethod
     def register(cls, name: str, help_text: str, usage: str = "", admin_only: bool = False):
@@ -98,8 +99,9 @@ class CommandRegistry:
         return any(kw in content for kw in IMAGE_KEYWORDS)
 
     @classmethod
-    async def handle(cls, content: str, group_openid: str = "") -> Reply:
+    async def handle(cls, content: str, group_openid: str = "", user_id: str = "") -> Reply:
         cls._ctx_group = group_openid
+        cls._ctx_user = user_id
 
         content = content.strip()
         logger.debug(f"路由: {content[:80]}")
@@ -161,6 +163,52 @@ def cmd_help(_: str) -> str:
 def cmd_clear(_: str) -> str:
     CommandRegistry.get_ai_service().clear_history()
     return "对话上下文已清除"
+
+# ==================== 每日随机 ====================
+
+from services.database import Database as _DB
+
+async def _daily_random(cache_type: str, api_url: str, uid: str) -> str:
+    import httpx
+    today = time.strftime("%Y-%m-%d")
+    db = _DB()
+    cached = db.get_daily_cache(uid, today, cache_type)
+    if cached:
+        logger.info(f"命中缓存: {cache_type} user={uid}")
+        return json.loads(cached)
+    try:
+        async with httpx.AsyncClient(timeout=10, verify=False) as c:
+            resp = await c.get(api_url)
+        if resp.status_code != 200:
+            return "API 请求失败，请稍后重试"
+        data = resp.json()
+        text = json.dumps(data, ensure_ascii=False, indent=2)
+        db.set_daily_cache(uid, today, cache_type, text)
+        logger.info(f"已缓存: {cache_type} user={uid}")
+        return json.loads(text)
+    except Exception as e:
+        logger.error(f"{cache_type} 请求失败: {e}")
+        return f"请求失败: {e}"
+
+@CommandRegistry.register(name="/今日老婆", help_text="今日老婆", usage="/今日老婆")
+async def cmd_daily_pro(_: str) -> str:
+    data = await _daily_random("pro", "https://yrxs.net/counter-strike/random_pro", CommandRegistry._ctx_user or "unknown")
+    if not data:
+        return Reply(text="你的老婆被Niko抓走了!")
+    return Reply(text=(
+        f"你的老婆是**{data['player']['team']}**战队的「**{data['player']['name']}**」\n"
+        f"[点击查看老婆图片]({data['avatar']})"  # hltv 有防盗链 暂时先不直接显示
+    ))
+
+@CommandRegistry.register(name="/今日饰品", help_text="今日饰品", usage="/今日饰品")
+async def cmd_daily_skin(_: str) -> str:
+    data = await _daily_random("skin", "https://yrxs.net/kx/random_skin", CommandRegistry._ctx_user or "unknown")
+    if not data:
+        return Reply(text="你的今日饰品被Niko抓走了!")
+    return Reply(text=(
+        f"你的今日饰品是**{data['case']['title']}**的**{data['skin']['gun']} | {data['skin']['name']}**\n"
+        f"![img #200px](https://g.fp.ps.netease.com/market/file/{data['skin']['src']})"
+    ))
 
 # ==================== 图片生成 ====================
 
@@ -267,7 +315,7 @@ async def cmd_steam(args: str) -> str:
         profiles = db.get_active_profiles(ctx or "")
         if not profiles:
             return "当前群没有视奸中的 Steam 账号"
-        lines = ["## Steam 视奸列表\n"]
+        lines = ["### Steam 视奸列表\n"]
         for p in profiles:
             sn = p["steam_name"] or "?"
             dn = p["display_name"]
@@ -314,12 +362,12 @@ async def cmd_steam(args: str) -> str:
         cos = COSService.get_instance()
         url = cos.upload_image(image_bytes, filename=f"steam_card/{account_id}.jpg")
         if url:
-            return Reply(text=f"## Steam 视奸\n![steam #246px #157px]({url})")
+            return Reply(text=f"### Steam 视奸\n![steam #246px #157px]({url})")
         return f"卡片上传失败"
 
     else:
         return Reply(text=(
-            "## Steam 视奸\n"
+            "### Steam 视奸\n"
             "用法:\n"
             "- `/steam add <steam_id>` — 添加视奸\n"
             "- `/steam remove <steam_id>` — 移除视奸\n"
@@ -332,3 +380,4 @@ async def cmd_steam(args: str) -> str:
                 make_button("查询", "/steam check ", 1, 2),
             ])
         )
+

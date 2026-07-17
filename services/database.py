@@ -58,6 +58,14 @@ class Database:
 
             CREATE INDEX IF NOT EXISTS idx_sessions_steam_id
                 ON game_sessions(steam_id, start_time);
+
+            CREATE TABLE IF NOT EXISTS daily_cache (
+                user_id  TEXT NOT NULL,
+                date     TEXT NOT NULL,
+                type     TEXT NOT NULL,
+                data     TEXT NOT NULL,
+                PRIMARY KEY (user_id, date, type)
+            );
         """)
         self._conn.commit()
 
@@ -161,6 +169,22 @@ class Database:
         )
         self._conn.commit()
         return minutes
+
+    # ==================== Daily Cache ====================
+
+    def get_daily_cache(self, user_id: str, date: str, cache_type: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT data FROM daily_cache WHERE user_id=? AND date=? AND type=?",
+            (user_id, date, cache_type),
+        ).fetchone()
+        return row[0] if row else None
+
+    def set_daily_cache(self, user_id: str, date: str, cache_type: str, data: str) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO daily_cache (user_id, date, type, data) VALUES (?, ?, ?, ?)",
+            (user_id, date, cache_type, data),
+        )
+        self._conn.commit()
 
     def get_recent_sessions(self, steam_id: str, limit: int = 10) -> list[dict]:
         rows = self._conn.execute(

@@ -48,5 +48,7 @@ def make_menu_keyboard() -> Keyboard:
     return make_keyboard([
         make_button("AI 生图", "/image ", style=1),
         make_button("Steam 视奸", "/steam", style=1),
+        make_button("今日老婆", "/今日老婆", style=1),
+        make_button("今日饰品", "/今日饰品", style=1),
         make_button("模拟开箱", "/oc", style=1),
     ], cols=2)

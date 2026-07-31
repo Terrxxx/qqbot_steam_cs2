@@ -259,7 +259,7 @@ class ImageService:
         panel = Image.new("RGBA", (W, bot_h), (*dark_panel, 180))
         img.paste(panel.convert("RGB"), (0, top_h), panel)
 
-        # 左下头像
+        # 左上头像
         avatar_size = 310
         avatar_y = 36
         avatar_x = 36
@@ -270,8 +270,8 @@ class ImageService:
             mask_draw.rounded_rectangle([0, 0, avatar_size, avatar_size], radius=4, fill=255)
             img.paste(thumb, (avatar_x, avatar_y), mask)
             if frame_img:
-                fr = frame_img.resize((avatar_size + 24, avatar_size + 24)).convert("RGBA")
-                img.paste(fr, (avatar_x - 12, avatar_y - 12), fr)
+                fr = frame_img.resize((avatar_size + 36, avatar_size + 36)).convert("RGBA")
+                img.paste(fr, (avatar_x - 18, avatar_y - 18), fr)
         else:
             draw.rounded_rectangle(
                 [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],

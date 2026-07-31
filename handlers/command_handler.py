@@ -29,7 +29,7 @@ IMAGE_KEYWORDS = [
     "画图", "生成图", "做一张图", "来张图", "来一张",
     "generate image", "draw", "create image",
     "帮我画", "帮我生成", "给我画", "给我生成",
-    "图片生成", "生成图像",
+    "图片生成", "生成图像", "绘制", "生图", "Generate"
 ]
 
 CASE_DATA = {}
@@ -208,6 +208,14 @@ async def cmd_daily_skin(_: str) -> str:
         f"![img #200px](https://g.fp.ps.netease.com/market/file/{data['skin']['src']})"
     ))
 
+# ==================== 职业哥猜猜猜 ====================
+
+@CommandRegistry.register(name="/职业哥猜猜猜", help_text="职业哥猜猜猜", usage="/职业哥猜猜猜")
+async def cmd_daily_skin(_: str) -> str:
+    return Reply(text=(
+        f"[职业哥猜猜猜](https://yrxs.net/counter-strike/daily)"
+    ))
+
 # ==================== 图片生成 ====================
 
 @CommandRegistry.register(name="/image", help_text="AI 生成图片", usage="/image <描述>")
@@ -330,7 +338,7 @@ async def cmd_steam(args: str) -> str:
         monitor = SteamMonitor.get_instance()
         result = await monitor.check_one(steam64)
         if result is None:
-            return f"查询失败 `{raw_id}`"
+            return f"查询失败 `{raw_id}`, 请检查账户**游戏详情**隐私是否设置为**公开**"
 
         game = result.get("game_name")
         result["status_text"] = "游戏中" if game else {0: "离线", 1: "在线", 2: "离开"}.get(result.get("personastate", 0), "离线")

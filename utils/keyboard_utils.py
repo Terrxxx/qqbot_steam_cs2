@@ -50,5 +50,6 @@ def make_menu_keyboard() -> Keyboard:
         make_button("Steam 视奸", "/steam", style=1),
         make_button("今日老婆", "/今日老婆", style=1),
         make_button("今日饰品", "/今日饰品", style=1),
+        make_button("职业哥猜猜猜", "/职业哥猜猜猜", style=1),
         make_button("模拟开箱", "/oc", style=1),
     ], cols=2)

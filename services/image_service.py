@@ -270,8 +270,8 @@ class ImageService:
             mask_draw.rounded_rectangle([0, 0, avatar_size, avatar_size], radius=4, fill=255)
             img.paste(thumb, (avatar_x, avatar_y), mask)
             if frame_img:
-                fr = frame_img.resize((avatar_size + 36, avatar_size + 36)).convert("RGBA")
-                img.paste(fr, (avatar_x - 18, avatar_y - 18), fr)
+                fr = frame_img.resize((avatar_size + 72, avatar_size + 72)).convert("RGBA")
+                img.paste(fr, (avatar_x - 36, avatar_y - 36), fr)
         else:
             draw.rounded_rectangle(
                 [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],
@@ -359,14 +359,15 @@ class ImageService:
                       " Steam 等级", fill=text_white, font=lv_font)
 
         # 勋章 (等级下方)
-        badge_by = lv_y + 130
-        badge_img = ImageService._load_image(badge_url, (78, 78))
-        if badge_img:
-            img.paste(badge_img, (lv_x, badge_by),
-                      badge_img.convert("RGBA") if badge_img.mode == "RGBA" else None)
-        draw.text((lv_x + 96, badge_by), badge_name or "", fill=text_white, font=font_small)
-        if badge_xp:
-            draw.text((lv_x + 96, badge_by + 36), badge_xp, fill=text_gray, font=font_small)
+        if badge_url:
+            badge_by = lv_y + 130
+            badge_img = ImageService._load_image(badge_url, (78, 78))
+            if badge_img:
+                img.paste(badge_img, (lv_x, badge_by),
+                        badge_img.convert("RGBA") if badge_img.mode == "RGBA" else None)
+            draw.text((lv_x + 96, badge_by), badge_name or "", fill=text_white, font=font_small)
+            if badge_xp:
+                draw.text((lv_x + 96, badge_by + 36), badge_xp, fill=text_gray, font=font_small)
 
         # 底部分割线
         draw.line([(40, H - 38), (220, H - 38)], fill=(48, 50, 62), width=2)

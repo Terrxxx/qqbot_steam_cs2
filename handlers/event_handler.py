@@ -7,7 +7,6 @@ import botpy
 
 from pathlib import Path
 from botpy.message import C2CMessage, GroupMessage
-from botpy.http import Route
 from handlers.command_handler import CommandRegistry, Reply
 from services.scheduler_service import SchedulerService
 from services.steam_service import SteamMonitor
@@ -15,6 +14,22 @@ from utils.logger import logger
 from utils.markdown_utils import build_markdown
 from utils.keyboard_utils import make_keyboard, make_button
 from utils.random_utils import get as get_random
+
+import botpy.message as _botpy_msg
+import botpy.connection as _botpy_conn
+
+class _PatchedGroupMessage(_botpy_msg.GroupMessage):
+    def __init__(self, api, event_id, data):
+        super().__init__(api, event_id, data)
+        role = data.get("member_role", "") or data.get("role", "")
+        if not role:
+            author = data.get("author", {})
+            role = author.get("member_role", "") or author.get("role", "")
+        self.member_role = role or "member"
+
+_botpy_msg.GroupMessage = _PatchedGroupMessage
+_botpy_conn.GroupMessage = _PatchedGroupMessage
+GroupMessage = _PatchedGroupMessage
 
 USERS_CASE_DATA = {}
 
@@ -79,28 +94,10 @@ class QQBotClient(botpy.Client):
 
     # ==================== 权限检查 ====================
 
-    async def check_group_admin(self, group_openid: str, member_openid: str) -> bool:
-        """查询用户在群内是否为管理员/群主"""
-        if not group_openid or not member_openid:
-            return False
-        try:
-            route = Route(
-                "GET",
-                "/v2/groups/{group_openid}/members/{openid}",
-                group_openid=group_openid,
-                openid=member_openid,
-            )
-            data = await self.api._http.request(route)
-            roles = data.get("roles", []) if isinstance(data, dict) else []
-            # roles 包含 "API_ADMIN" 或角色 ID 字符串表示管理员/群主
-            for r in roles:
-                r_str = str(r).upper()
-                if "ADMIN" in r_str or "OWNER" in r_str or r_str == "2" or r_str == "4":
-                    return True
-            return False
-        except Exception as e:
-            logger.warning(f"查询管理员权限失败: {e}")
-            return False
+    @staticmethod
+    def is_group_admin(member_role: str) -> bool:
+        """member_role 取值: member / admin / owner"""
+        return member_role in ("admin", "owner")
 
     # ==================== 消息事件 ====================
 
@@ -109,17 +106,15 @@ class QQBotClient(botpy.Client):
         content = self._clean_at(message.content)
         group_id = getattr(message, "group_openid", "")
         member_id = message.author.member_openid
-        logger.info(f"[群聊@] 群={group_id} 用户={member_id} 内容={content[:80]}")
-
-        async def _check_admin(gid: str, uid: str) -> bool:
-            return await self.check_group_admin(gid, uid)
+        member_role = getattr(message, "member_role", "member")
+        logger.info(f"[群聊@] 群={group_id} 用户={member_id} 权限={member_role} 内容={content[:80]}")
 
         reply = await CommandRegistry.handle(
             content,
             group_openid=group_id,
             user_id=member_id,
             member_openid=member_id,
-            check_admin=_check_admin,
+            member_role=member_role,
         )
         await self._do_reply(message, reply)
 

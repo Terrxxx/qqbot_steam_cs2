@@ -64,7 +64,7 @@ class CommandRegistry:
     _ctx_group: str = ""
     _ctx_user: str = ""
     _ctx_member: str = ""
-    _check_admin: Optional[Callable] = None
+    _ctx_member_role: str = "member"  # member / admin / owner
 
     @classmethod
     def register(cls, name: str, help_text: str, usage: str = "", admin_only: bool = False):
@@ -108,12 +108,12 @@ class CommandRegistry:
         group_openid: str = "",
         user_id: str = "",
         member_openid: str = "",
-        check_admin: Optional[Callable] = None,
+        member_role: str = "member",
     ) -> Reply:
         cls._ctx_group = group_openid
         cls._ctx_user = user_id
         cls._ctx_member = member_openid
-        cls._check_admin = check_admin
+        cls._ctx_member_role = member_role
 
         content = content.strip()
         logger.debug(f"路由: {content[:80]}")
@@ -124,16 +124,13 @@ class CommandRegistry:
                 keyboard=make_menu_keyboard(),
             )
 
-        async def _ensure_admin() -> str | None:
-            """检查是否为管理员，返回错误消息或 None（通过）"""
+        def _ensure_admin() -> str | None:
+            """检查是否为管理员，返回错误消息|None"""
             if not group_openid:
                 return "此命令只能在群聊中使用"
-            if not check_admin or not member_openid:
-                return None  # 私聊或无法校验时不限制
-            is_admin = await check_admin(group_openid, member_openid)
-            if not is_admin:
-                return "此命令仅限群管理员/群主使用"
-            return None
+            if cls._ctx_member_role in ("admin", "owner"):
+                return None
+            return "此命令仅限群管理员/群主使用"
 
         # 匹配注册的命令
         sorted_cmds = sorted(cls._commands.items(), key=lambda x: len(x[0]), reverse=True)
@@ -144,7 +141,7 @@ class CommandRegistry:
 
                 # 管理命令权限校验
                 if command.admin_only:
-                    err = await _ensure_admin()
+                    err = _ensure_admin()
                     if err:
                         return Reply(text=err)
 
@@ -268,7 +265,7 @@ async def cmd_image(args: str) -> Reply:
 # ==================== 其他 ====================
 
 # @CommandRegistry.register(name="/opencase", help_text="模拟开箱", usage="/opencase <箱子名>")
-@CommandRegistry.register(name="/oc", help_text="模拟开箱", usage="/oc <箱子名>")
+@CommandRegistry.register(name="/模拟开箱", help_text="模拟开箱", usage="/模拟开箱 <箱子名>")
 def cmd_opencase(args: str) -> str:
     """模拟 CS2 开箱，从 addSkin.json 读取皮肤数据"""
     if not CASE_DATA:
@@ -316,8 +313,6 @@ def cmd_opencase(args: str) -> str:
 async def _steam_admin_cmd(action: str, rest: str) -> Reply:
     """处理 /steam 管理子命令 (on/off/time/freq/status)，调用前已校验管理员"""
     ctx = CommandRegistry._ctx_group
-    member = CommandRegistry._ctx_member
-    check_admin = CommandRegistry._check_admin
 
     if not ctx:
         return Reply(text="此命令只能在群聊中使用")
@@ -378,20 +373,15 @@ async def _steam_admin_cmd(action: str, rest: str) -> Reply:
     return Reply(text="未知管理命令")
 
 
-async def _steam_ensure_admin() -> str | None:
+def _steam_ensure_admin() -> str | None:
     """Steam 管理命令的 admin 检查，返回错误消息或 None"""
     ctx = CommandRegistry._ctx_group
-    member = CommandRegistry._ctx_member
-    check_admin = CommandRegistry._check_admin
 
     if not ctx:
         return "此命令只能在群聊中使用"
-    if not check_admin or not member:
-        return None  # 无法校验时不限制
-    is_admin = await check_admin(ctx, member)
-    if not is_admin:
-        return "此命令仅限群管理员/群主使用"
-    return None
+    if CommandRegistry._ctx_member_role in ("admin", "owner"):
+        return None
+    return "此命令仅限群管理员/群主使用"
 
 
 # ==================== Steam 视奸 ====================
@@ -486,7 +476,7 @@ async def cmd_steam(args: str) -> str:
     # ---- 管理命令 (status 不限，其余仅管理员) ----
     elif action in ("on", "off", "time", "freq", "status"):
         if action != "status":
-            err = await _steam_ensure_admin()
+            err = _steam_ensure_admin()
             if err:
                 return Reply(text=err)
         return await _steam_admin_cmd(action, rest)

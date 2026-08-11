@@ -66,6 +66,14 @@ class Database:
                 data     TEXT NOT NULL,
                 PRIMARY KEY (user_id, date, type)
             );
+
+            CREATE TABLE IF NOT EXISTS steam_monitor_config (
+                group_openid  TEXT PRIMARY KEY,
+                enabled       INTEGER DEFAULT 1,
+                poll_interval INTEGER DEFAULT 60,
+                time_start    TEXT DEFAULT '',
+                time_end      TEXT DEFAULT ''
+            );
         """)
         self._conn.commit()
 
@@ -193,3 +201,61 @@ class Database:
             (steam_id, limit),
         ).fetchall()
         return [dict(zip(["game", "start", "end", "mins"], r)) for r in rows]
+
+    # ==================== Steam Monitor Config ====================
+
+    def get_monitor_config(self, group_openid: str) -> dict:
+        """获取群的监控配置，返回默认值如果不存在"""
+        row = self._conn.execute(
+            "SELECT enabled, poll_interval, time_start, time_end "
+            "FROM steam_monitor_config WHERE group_openid=?",
+            (group_openid,),
+        ).fetchone()
+        if row:
+            return {
+                "enabled": bool(row[0]),
+                "poll_interval": row[1],
+                "time_start": row[2] or "",
+                "time_end": row[3] or "",
+            }
+        return {"enabled": True, "poll_interval": 60, "time_start": "", "time_end": ""}
+
+    def set_monitor_config(
+        self,
+        group_openid: str,
+        enabled: bool | None = None,
+        poll_interval: int | None = None,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> None:
+        """更新或插入群的监控配置（只更新非 None 的字段）"""
+        current = self.get_monitor_config(group_openid)
+        new_enabled = 1 if enabled else 0 if enabled is False else (1 if current["enabled"] else 0)
+        new_interval = poll_interval if poll_interval is not None else current["poll_interval"]
+        new_start = time_start if time_start is not None else current["time_start"]
+        new_end = time_end if time_end is not None else current["time_end"]
+
+        self._conn.execute(
+            """INSERT OR REPLACE INTO steam_monitor_config
+               (group_openid, enabled, poll_interval, time_start, time_end)
+               VALUES (?, ?, ?, ?, ?)""",
+            (group_openid, new_enabled, new_interval, new_start, new_end),
+        )
+        self._conn.commit()
+
+    def get_all_monitor_configs(self) -> list[dict]:
+        """获取所有群的监控配置"""
+        rows = self._conn.execute(
+            "SELECT group_openid, enabled, poll_interval, time_start, time_end "
+            "FROM steam_monitor_config"
+        ).fetchall()
+        return [
+            {
+                "group_openid": r[0],
+                "enabled": bool(r[1]),
+                "poll_interval": r[2],
+                "time_start": r[3] or "",
+                "time_end": r[4] or "",
+            }
+            for r in rows
+        ]

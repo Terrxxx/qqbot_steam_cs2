@@ -16,6 +16,7 @@ import os
 import httpx
 import asyncio
 import re
+import time
 
 STEAM_BASE64 = 76561197960265728
 
@@ -60,6 +61,7 @@ class SteamMonitor:
         self._api: Any = None
         self._db = Database()
         self._state: dict[str, dict] = {}
+        self._last_poll: dict[str, float] = {}  # steam_id → timestamp, 用于自定义频率
         self._running = False
         logger.info("Steam 监控服务已初始化")
 
@@ -94,6 +96,31 @@ class SteamMonitor:
     async def check_one(self, steam_id: str) -> Optional[dict]:
         return await self._fetch_profile(steam_id)
 
+    # ==================== 每群配置管理 ====================
+
+    def set_enabled(self, group_openid: str, enabled: bool) -> None:
+        """开启/关闭指定群的监控"""
+        self._db.set_monitor_config(group_openid, enabled=enabled)
+
+    def set_time_range(self, group_openid: str, time_start: str, time_end: str) -> None:
+        """设置指定群的监控时间段 (HH:MM 格式)"""
+        self._db.set_monitor_config(group_openid, time_start=time_start, time_end=time_end)
+
+    def set_poll_interval(self, group_openid: str, seconds: int) -> None:
+        """设置指定群的轮询间隔 (秒)"""
+        self._db.set_monitor_config(group_openid, poll_interval=max(seconds, 10))
+
+    def get_group_status(self, group_openid: str) -> dict:
+        """获取指定群的监控状态"""
+        cfg = self._db.get_monitor_config(group_openid)
+        profiles = self._db.get_active_profiles(group_openid)
+        cfg["profile_count"] = len(profiles)
+        cfg["profiles"] = [
+            {"steam_id": p["steam_id"], "name": p["display_name"] or p["steam_name"] or p["steam_id"]}
+            for p in profiles
+        ]
+        return cfg
+
     # ==================== 定时轮询 ====================
 
     async def _poll(self) -> None:
@@ -101,11 +128,39 @@ class SteamMonitor:
             profiles = self._db.get_all_profiles()
             if not profiles:
                 return
+
+            now = time.time()
+            # 收集所有群的配置
+            group_ids = set(p["group_openid"] for p in profiles if p["group_openid"])
+            group_cfgs: dict[str, dict] = {}
+            for gid in group_ids:
+                group_cfgs[gid] = self._db.get_monitor_config(gid)
+
             sem = asyncio.Semaphore(config.steam.max_concurrent)
 
             async def fetch_one(profile: dict):
+                sid = profile["steam_id"]
+                gid = profile.get("group_openid", "")
+                cfg = group_cfgs.get(gid, {})
+
+                if not cfg.get("enabled", True):
+                    return profile, None
+
+                ts = cfg.get("time_start", "")
+                te = cfg.get("time_end", "")
+                if ts and te:
+                    now_str = datetime.now().strftime("%H:%M")
+                    if not (ts <= now_str <= te):
+                        return profile, None
+
+                interval = cfg.get("poll_interval", config.steam.poll_interval)
+                last = self._last_poll.get(sid, 0)
+                if now - last < interval:
+                    return profile, None
+
+                self._last_poll[sid] = now
                 async with sem:
-                    player = await self._fetch_profile(profile["steam_id"])
+                    player = await self._fetch_profile(sid)
                 return profile, player
 
             tasks = [fetch_one(p) for p in profiles]

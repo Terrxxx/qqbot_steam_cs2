@@ -7,6 +7,7 @@ import botpy
 
 from pathlib import Path
 from botpy.message import C2CMessage, GroupMessage
+from botpy.http import Route
 from handlers.command_handler import CommandRegistry, Reply
 from services.scheduler_service import SchedulerService
 from services.steam_service import SteamMonitor
@@ -76,14 +77,50 @@ class QQBotClient(botpy.Client):
 
         logger.info("所有服务已就绪")
 
+    # ==================== 权限检查 ====================
+
+    async def check_group_admin(self, group_openid: str, member_openid: str) -> bool:
+        """查询用户在群内是否为管理员/群主"""
+        if not group_openid or not member_openid:
+            return False
+        try:
+            route = Route(
+                "GET",
+                "/v2/groups/{group_openid}/members/{openid}",
+                group_openid=group_openid,
+                openid=member_openid,
+            )
+            data = await self.api._http.request(route)
+            roles = data.get("roles", []) if isinstance(data, dict) else []
+            # roles 包含 "API_ADMIN" 或角色 ID 字符串表示管理员/群主
+            for r in roles:
+                r_str = str(r).upper()
+                if "ADMIN" in r_str or "OWNER" in r_str or r_str == "2" or r_str == "4":
+                    return True
+            return False
+        except Exception as e:
+            logger.warning(f"查询管理员权限失败: {e}")
+            return False
+
     # ==================== 消息事件 ====================
 
     async def on_group_at_message_create(self, message: GroupMessage) -> None:
         """群聊 @机器人 消息"""
         content = self._clean_at(message.content)
         group_id = getattr(message, "group_openid", "")
-        logger.info(f"[群聊@] 群={group_id} 用户={message.author.member_openid} 内容={content[:80]}")
-        reply = await CommandRegistry.handle(content, group_openid=group_id, user_id=message.author.member_openid)
+        member_id = message.author.member_openid
+        logger.info(f"[群聊@] 群={group_id} 用户={member_id} 内容={content[:80]}")
+
+        async def _check_admin(gid: str, uid: str) -> bool:
+            return await self.check_group_admin(gid, uid)
+
+        reply = await CommandRegistry.handle(
+            content,
+            group_openid=group_id,
+            user_id=member_id,
+            member_openid=member_id,
+            check_admin=_check_admin,
+        )
         await self._do_reply(message, reply)
 
     async def on_c2c_message_create(self, message: C2CMessage) -> None:

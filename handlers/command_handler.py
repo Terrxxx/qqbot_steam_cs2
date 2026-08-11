@@ -63,6 +63,8 @@ class CommandRegistry:
     _ai_service: Optional[AIService] = None
     _ctx_group: str = ""
     _ctx_user: str = ""
+    _ctx_member: str = ""
+    _check_admin: Optional[Callable] = None
 
     @classmethod
     def register(cls, name: str, help_text: str, usage: str = "", admin_only: bool = False):
@@ -100,9 +102,18 @@ class CommandRegistry:
         return any(kw in content for kw in IMAGE_KEYWORDS)
 
     @classmethod
-    async def handle(cls, content: str, group_openid: str = "", user_id: str = "") -> Reply:
+    async def handle(
+        cls,
+        content: str,
+        group_openid: str = "",
+        user_id: str = "",
+        member_openid: str = "",
+        check_admin: Optional[Callable] = None,
+    ) -> Reply:
         cls._ctx_group = group_openid
         cls._ctx_user = user_id
+        cls._ctx_member = member_openid
+        cls._check_admin = check_admin
 
         content = content.strip()
         logger.debug(f"路由: {content[:80]}")
@@ -113,12 +124,30 @@ class CommandRegistry:
                 keyboard=make_menu_keyboard(),
             )
 
+        async def _ensure_admin() -> str | None:
+            """检查是否为管理员，返回错误消息或 None（通过）"""
+            if not group_openid:
+                return "此命令只能在群聊中使用"
+            if not check_admin or not member_openid:
+                return None  # 私聊或无法校验时不限制
+            is_admin = await check_admin(group_openid, member_openid)
+            if not is_admin:
+                return "此命令仅限群管理员/群主使用"
+            return None
+
         # 匹配注册的命令
         sorted_cmds = sorted(cls._commands.items(), key=lambda x: len(x[0]), reverse=True)
         for cmd_name, command in sorted_cmds:
             if content.startswith(cmd_name):
                 args = content[len(cmd_name):].strip()
                 logger.info(f"匹配: {cmd_name} args={args[:50]}")
+
+                # 管理命令权限校验
+                if command.admin_only:
+                    err = await _ensure_admin()
+                    if err:
+                        return Reply(text=err)
+
                 try:
                     raw = await cls._run_handler(command.handler, args)
                     result = raw if isinstance(raw, Reply) else Reply(text=str(raw))
@@ -282,9 +311,92 @@ def cmd_opencase(args: str) -> str:
         ])
     )
 
+# ==================== Steam 视奸管理 ====================
+
+async def _steam_admin_cmd(action: str, rest: str) -> Reply:
+    """处理 /steam 管理子命令 (on/off/time/freq/status)，调用前已校验管理员"""
+    ctx = CommandRegistry._ctx_group
+    member = CommandRegistry._ctx_member
+    check_admin = CommandRegistry._check_admin
+
+    if not ctx:
+        return Reply(text="此命令只能在群聊中使用")
+
+    monitor = SteamMonitor.get_instance()
+
+    if action == "on":
+        monitor.set_enabled(ctx, True)
+        return Reply(text="Steam 视奸已**开启**，检测到游戏状态变化时将自动推送")
+
+    elif action == "off":
+        monitor.set_enabled(ctx, False)
+        return Reply(text="Steam 视奸已**关闭**，将不再自动推送状态变化")
+
+    elif action == "time":
+        # /steam time 08:00-22:00 或 /steam time 取消
+        if not rest or rest == "取消":
+            monitor.set_time_range(ctx, "", "")
+            return Reply(text="时间段限制已**取消**，将全天候监控")
+        parts = rest.replace("~", "-").replace("～", "-").replace("—", "-").split("-")
+        if len(parts) != 2:
+            return Reply(text="格式: `/steam time 08:00-22:00`\n取消: `/steam time 取消`")
+        t1, t2 = parts[0].strip(), parts[1].strip()
+        # 简单校验 HH:MM 格式
+        import re as _re
+        if not (_re.match(r"^\d{1,2}:\d{2}$", t1) and _re.match(r"^\d{1,2}:\d{2}$", t2)):
+            return Reply(text="时间格式错误，请使用 HH:MM 格式，如 `08:00-22:00`")
+        monitor.set_time_range(ctx, t1, t2)
+        return Reply(text=f"时间段已设置为 **{t1}** ~ **{t2}**，仅在此时间段内监控")
+
+    elif action == "freq":
+        if not rest:
+            return Reply(text="格式: `/steam freq <秒>`\n例如: `/steam freq 30` (最少 10 秒)")
+        try:
+            secs = int(rest.strip())
+        except ValueError:
+            return Reply(text="请输入有效数字，例如: `/steam freq 30`")
+        if secs < 10:
+            return Reply(text="轮询间隔最少 10 秒")
+        monitor.set_poll_interval(ctx, secs)
+        return Reply(text=f"轮询间隔已设置为 **{secs} 秒**")
+
+    elif action == "status":
+        cfg = monitor.get_group_status(ctx)
+        lines = [
+            "### Steam 视奸状态",
+            f"- 监控开关: **{'开启' if cfg['enabled'] else '关闭'}**",
+            f"- 轮询间隔: **{cfg['poll_interval']} 秒**",
+            f"- 时间段: **{cfg['time_start'] or '全天'} ~ {cfg['time_end'] or '全天'}**",
+            f"- 监控数量: **{cfg['profile_count']}** 个",
+        ]
+        if cfg["profiles"]:
+            lines.append("- 监控列表:")
+            for p in cfg["profiles"]:
+                lines.append(f"  - {p['name']} (`{p['steam_id']}`)")
+        return Reply(text="\n".join(lines))
+
+    return Reply(text="未知管理命令")
+
+
+async def _steam_ensure_admin() -> str | None:
+    """Steam 管理命令的 admin 检查，返回错误消息或 None"""
+    ctx = CommandRegistry._ctx_group
+    member = CommandRegistry._ctx_member
+    check_admin = CommandRegistry._check_admin
+
+    if not ctx:
+        return "此命令只能在群聊中使用"
+    if not check_admin or not member:
+        return None  # 无法校验时不限制
+    is_admin = await check_admin(ctx, member)
+    if not is_admin:
+        return "此命令仅限群管理员/群主使用"
+    return None
+
+
 # ==================== Steam 视奸 ====================
 
-@CommandRegistry.register(name="/steam", help_text="Steam 游戏视奸", usage="/steam add/remove/list/check")
+@CommandRegistry.register(name="/steam", help_text="Steam 游戏视奸", usage="/steam add/remove/list/check/on/off/time/freq/status")
 async def cmd_steam(args: str) -> str:
     ctx = CommandRegistry._ctx_group
     sub = args.split(maxsplit=1)
@@ -371,6 +483,14 @@ async def cmd_steam(args: str) -> str:
             return Reply(text=f"### Steam 视奸\n![steam #246px #157px]({url})")
         return f"卡片上传失败"
 
+    # ---- 管理命令 (status 不限，其余仅管理员) ----
+    elif action in ("on", "off", "time", "freq", "status"):
+        if action != "status":
+            err = await _steam_ensure_admin()
+            if err:
+                return Reply(text=err)
+        return await _steam_admin_cmd(action, rest)
+
     else:
         return Reply(text=(
             "### Steam 视奸\n"
@@ -378,12 +498,18 @@ async def cmd_steam(args: str) -> str:
             "- `/steam add <steam_id>` — 添加视奸\n"
             "- `/steam remove <steam_id>` — 移除视奸\n"
             "- `/steam list` — 查看视奸列表\n"
-            "- `/steam check <steam_id>` — 手动查询状态"),
+            "- `/steam check <steam_id>` — 手动查询状态\n"
+            "- `/steam on` — 开启视奸 (仅管理员)\n"
+            "- `/steam off` — 关闭视奸 (仅管理员)\n"
+            "- `/steam time <开始>-<结束>` — 设置时间段 (仅管理员)\n"
+            "- `/steam freq <秒>` — 设置轮询频率 (仅管理员)\n"
+            "- `/steam status` — 查看当前配置"),
             keyboard=make_keyboard([
                 make_button("新增", "/steam add ", 1, 2),
                 make_button("移除", "/steam remove ", 1, 2),
                 make_button("列表", "/steam list", 1, 2),
                 make_button("查询", "/steam check ", 1, 2),
+                make_button("状态", "/steam status", 1, 2),
             ])
         )
 
